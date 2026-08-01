@@ -2,37 +2,199 @@ name: CI
 
 on:
   push:
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: Build project
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[ci skip]')"
+  check:
+    name: Check (${{ matrix.platform.target }})
+    runs-on: ${{ matrix.platform.os }}
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        platform:
+          # macOS (64-bit)
+          - os: macos-26
+            target: aarch64-apple-darwin # Tier 1
+          - os: macos-26-intel
+            target: x86_64-apple-darwin # Tier 2
+
+          # Linux (32-bit) (glibc)
+          - os: ubuntu-26.04-arm
+            target: armv7-unknown-linux-gnueabi # Tier 2
+            armv7: true
+          - os: ubuntu-26.04
+            target: i686-unknown-linux-gnu # Tier 1
+            i686: true
+
+          # Linux (64-bit) (glibc)
+          - os: ubuntu-26.04-arm
+            target: aarch64-unknown-linux-gnu # Tier 1
+          - os: ubuntu-26.04
+            target: x86_64-unknown-linux-gnu # Tier 1
+
+          # Linux (32-bit) (musl)
+          - os: ubuntu-26.04-arm
+            target: armv7-unknown-linux-musleabi # Tier 2
+            armv7-musl: true
+          - os: ubuntu-26.04
+            target: i686-unknown-linux-musl # Tier 2
+            musl: true
+
+          # Linux (64-bit) (musl)
+          - os: ubuntu-26.04-arm
+            target: aarch64-unknown-linux-musl # Tier 2
+            musl: true
+          - os: ubuntu-26.04
+            target: x86_64-unknown-linux-musl # Tier 2
+            musl: true
+
+          # Windows (32-bit) (msvc)
+          - os: windows-2025-vs2026
+            target: i686-pc-windows-msvc # Tier 1
+
+          # Windows (64-bit) (msvc)
+          - os: windows-11-vs2026-arm
+            target: aarch64-pc-windows-msvc # Tier 1
+          - os: windows-2025-vs2026
+            target: x86_64-pc-windows-msvc # Tier 1
+
+          # Windows (32-bit) (gnu)
+          - os: windows-2025-vs2026
+            target: i686-pc-windows-gnu # Tier 2
+            mingw32: true
+
+          # Windows (64-bit) (gnu)
+          - os: windows-11-vs2026-arm
+            target: aarch64-pc-windows-gnullvm # Tier 2
+            gnullvm: true
+          - os: windows-2025-vs2026
+            target: x86_64-pc-windows-gnu # Tier 1
+
+          # WebAssembly (mvp, generic) (32-bit)
+          - os: ubuntu-26.04
+            target: wasm32v1-none # Tier 2
+          - os: ubuntu-26.04
+            target: wasm32-unknown-unknown # Tier 2
+
+          # WebAssembly (emscripten) (32-bit)
+          - os: ubuntu-26.04
+            target: wasm32-unknown-emscripten # Tier 2
+            emscripten: true
+
+          # WebAssembly (wasi) (32-bit)
+          - os: ubuntu-26.04
+            target: wasm32-wasip1 # Tier 2
+            wasi: true
+          - os: ubuntu-26.04
+            target: wasm32-wasip1-threads # Tier 2
+            wasi: true
+          - os: ubuntu-26.04
+            target: wasm32-wasip2 # Tier 2
+            wasi: true
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
-      - name: Install rust toolchain
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
 
-      - name: Rust cache
-        if: github.ref == 'refs/heads/main' # pull requests can overflow cache storage
-        uses: Swatinem/rust-cache@v2
+      - name: Install armv7-musl toolchain
+        if: matrix.platform['armv7-musl']
+        uses: ./.github/actions/armv7-musl-toolchain
+
+      - name: Install armv7 toolchain
+        if: matrix.platform.armv7
+        uses: ./.github/actions/armv7-toolchain
+
+      - name: Install emscripten toolchain
+        if: matrix.platform.emscripten
+        uses: ./.github/actions/emscripten-toolchain
+
+      - name: Install gnullvm toolchain
+        if: matrix.platform.gnullvm
+        uses: ./.github/actions/gnullvm-toolchain
+
+      - name: Install i686 toolchain
+        if: matrix.platform.i686
+        uses: ./.github/actions/i686-toolchain
+
+      - name: Install mingw32 toolchain
+        if: matrix.platform.mingw32
+        uses: ./.github/actions/mingw32-toolchain
+
+      - name: Install musl toolchain
+        if: matrix.platform.musl
+        uses: ./.github/actions/musl-toolchain
+
+      - name: Install wasi toolchain
+        if: matrix.platform.wasi
+        uses: ./.github/actions/wasi-toolchain
 
       - name: Cargo build
-        run: cargo build --release
+        shell: bash
+        run: ./scripts/cargo.sh build --target ${{ matrix.platform.target }}
 
       - name: Cargo test
-        run: cargo test --release
+        shell: bash
+        run: ./scripts/cargo.sh test --target ${{ matrix.platform.target }}
 
       - name: Cargo clippy
-        run: cargo clippy --release --all-targets -- -D warnings
+        shell: bash
+        run: ./scripts/cargo.sh clippy --target ${{ matrix.platform.target }}
+
+      - name: Build pre-built library
+        id: prebuilt
+        shell: bash
+        run: echo "out-dir=$(./scripts/prebuilt.sh '${{ matrix.platform.target }}')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload pre-built library
+        uses: actions/upload-artifact@v7
+        with:
+          name: alloca-${{ matrix.platform.target }}
+          path: ${{ steps.prebuilt.outputs.out-dir }}
+          if-no-files-found: error
+
+      - name: Verify pre-built library
+        if: ${{ !endsWith(matrix.platform.target, '-msvc') }}
+        shell: bash
+        env:
+          OUT_DIR: ${{ steps.prebuilt.outputs.out-dir }}
+          TARGET: ${{ matrix.platform.target }}
+        run: |
+          library=libcalloca.a
+          if [[ "$TARGET" == *-msvc ]]; then
+            library=calloca.lib
+          fi
+
+          generated="$OUT_DIR/$library"
+          committed="alloca/$TARGET/$library"
+
+          if ! cmp "$generated" "$committed"; then
+            echo "::error file=$committed::Pre-built library differs from clean build for $TARGET"
+            exit 1
+          fi
+
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cargo fmt
-        run: cargo fmt -- --check
+        run: cargo fmt -- --config wrap_comments=true,format_code_in_doc_comments=true --check

@@ -1,0 +1,32 @@
+runs:
+  using: composite
+  steps:
+    - name: Install wasi-sdk
+      shell: bash
+      env:
+        WASI_SDK_VERSION: "33.0"
+        WASI_SDK_SHA256: "0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce"
+      run: |
+        release="${WASI_SDK_VERSION%%.*}"
+        archive="$RUNNER_TEMP/wasi-sdk-$WASI_SDK_VERSION-x86_64-linux.tar.gz"
+        curl --fail --location --retry 3 \
+          "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$release/wasi-sdk-$WASI_SDK_VERSION-x86_64-linux.tar.gz" \
+          --output "$archive"
+        echo "$WASI_SDK_SHA256  $archive" | sha256sum --check
+        tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP"
+        mv "$RUNNER_TEMP/wasi-sdk-$WASI_SDK_VERSION-x86_64-linux" "$RUNNER_TEMP/wasi-sdk-$WASI_SDK_VERSION"
+        echo "WASI_SDK_PATH=$RUNNER_TEMP/wasi-sdk-$WASI_SDK_VERSION" >> "$GITHUB_ENV"
+
+    - name: Install wasmtime
+      uses: bytecodealliance/actions/wasmtime/setup@v1
+      env:
+        WASMTIME_VERSION: "46.0.2"
+      with:
+        version: ${{ env.WASMTIME_VERSION }}
+
+    - name: Configure Cargo runners
+      shell: bash
+      run: |
+        echo 'CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime' >> "$GITHUB_ENV"
+        echo 'CARGO_TARGET_WASM32_WASIP1_THREADS_RUNNER=wasmtime --wasm threads=y,shared-memory=y --wasi threads=y' >> "$GITHUB_ENV"
+        echo 'CARGO_TARGET_WASM32_WASIP2_RUNNER=wasmtime' >> "$GITHUB_ENV"

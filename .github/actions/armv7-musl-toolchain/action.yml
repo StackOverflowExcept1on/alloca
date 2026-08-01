@@ -1,0 +1,15 @@
+runs:
+  using: composite
+  steps:
+    - name: Install armv7-musl toolchain
+      shell: bash
+      run: sudo apt install --yes clang qemu-user
+
+    - name: Configure armv7-musl toolchain
+      shell: bash
+      run: |
+        echo 'AR_armv7_unknown_linux_musleabi=ar' >> "$GITHUB_ENV"
+        echo 'CC_armv7_unknown_linux_musleabi=clang' >> "$GITHUB_ENV"
+        echo 'CFLAGS_armv7_unknown_linux_musleabi=-ffreestanding -nostdlibinc' >> "$GITHUB_ENV"
+        echo 'CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=rust-lld' >> "$GITHUB_ENV"
+        echo 'CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_RUNNER=qemu-arm' >> "$GITHUB_ENV"

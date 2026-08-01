@@ -1,0 +1,8 @@
+runs:
+  using: composite
+  steps:
+    - name: Install i686 toolchain
+      shell: bash
+      run: |
+        sudo apt update
+        sudo apt install --yes gcc-multilib libc6-dev-i386

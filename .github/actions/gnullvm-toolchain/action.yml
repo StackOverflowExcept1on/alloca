@@ -1,0 +1,15 @@
+runs:
+  using: composite
+  steps:
+    - name: Install gnullvm toolchain
+      shell: pwsh
+      run: |
+        $version = '20260602'
+        $archive = Join-Path $env:RUNNER_TEMP 'llvm-mingw.zip'
+        $toolchain = Join-Path $env:RUNNER_TEMP "llvm-mingw-$version-ucrt-aarch64"
+        Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/$version/llvm-mingw-$version-ucrt-aarch64.zip" -OutFile $archive
+        Expand-Archive -Path $archive -DestinationPath $env:RUNNER_TEMP
+        Add-Content $env:GITHUB_PATH (Join-Path $toolchain 'bin')
+        Add-Content $env:GITHUB_ENV 'AR_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-ar'
+        Add-Content $env:GITHUB_ENV 'CC_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-clang'
+        Add-Content $env:GITHUB_ENV 'CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER=aarch64-w64-mingw32-clang'

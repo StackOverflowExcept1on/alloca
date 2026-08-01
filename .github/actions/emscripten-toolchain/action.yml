@@ -1,0 +1,11 @@
+runs:
+  using: composite
+  steps:
+    - name: Install emscripten-sdk
+      uses: emscripten-core/setup-emsdk@v16
+      with:
+        version: 6.0.5
+
+    - name: Configure emscripten toolchain
+      shell: bash
+      run: echo 'CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUNNER=node' >> "$GITHUB_ENV"
